@@ -824,6 +824,10 @@ void drive_bus() {
             } else { // other selections?
                 operand2 = 0;
             }
+
+            if (GetLSHF1(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+                operand1 = operand1 >> 1; //left shift 1
+            }
             
             BUS = Low16bits(operand1 + operand2);
 
@@ -917,6 +921,102 @@ void drive_bus() {
    */
 void latch_datapath_values() {
 
-         
+    if (GetLD_MAR(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+        NEXT_LATCHES.MAR = Low16bits(BUS);
+    }
+
+    if (GetLD_MDR(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+        if (GetMIO_EN(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+            int dataSize = GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION);
+            int MAR0 = CURRENT_LATCHES.MAR & 0x1; 
+
+            if (CURRENT_LATCHES.READY == 1){ // we now read from memory 
+                if (dataSize == 0){ // read a byte
+                    CURRENT_LATCHES.MDR = SEXT(MEMORY[CURRENT_LATCHES.MAR >> 1][MAR0], 7);
+                } else { // read a word
+                    CURRENT_LATCHES.MDR = ((MEMORY[CURRENT_LATCHES.MAR >> 1][1] & 0xFF)<< 8) + (MEMORY[CURRENT_LATCHES.MAR >> 1][0] & 0xFF);
+                }
+                
+                NEXT_LATCHES.READY = 0;
+                cycleCount = 0; //reset everything
+            }
+        } else {
+            if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION) == 1) {
+                NEXT_LATCHES.MDR = Low16bits(BUS);
+            } else {
+                NEXT_LATCHES.MDR = BUS & 0xFF;
+            }
+        }
+    }
+
+    if (GetLD_IR(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+        NEXT_LATCHES.IR = Low16bits(BUS);
+    }
+
+    if (GetLD_REG(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+
+    }
+
+    if (GetLD_CC(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+        setCC(SEXT(Low16bits(BUS), 15));
+    }
+
+    if (GetLD_PC(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+        int tempMux = GetPCMUX(CURRENT_LATCHES.MICROINSTRUCTION);
+        // PCMUX holds 3 values 
+        // 0 - PC + 2
+        // 1 - BUS -> get value from BUS
+        // 2 - ADDER -> address adder
+
+        if (tempMux == 0) { // PC + 2
+            NEXT_LATCHES.PC = CURRENT_LATCHES.PC + 2;
+        } else if (tempMux == 1) { // BUS
+            NEXT_LATCHES.PC = BUS;
+        } else if (tempMux == 2) { // ADDER
+            
+            int operand1;
+            int operand2;
+
+            if ((GetADDR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1)) { // ADDR1MUX - 1 = BaseR
+
+                // ADDR1MUX is fed from SR1MUX and PC
+                // SR1MUX - 1 = [11:9] - 2= [8:6]
+
+                if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) { // source 1 = 8:6
+                    operand1 = CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 6) & 0x07];
+
+                } else if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0) { // source 2 = 11:9
+                    operand1 = CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 9) & 0x07];
+                } 
+               
+            } else { // ADDR1MUX selects PC if not BaseR 
+                operand1 = CURRENT_LATCHES.PC;
+            }
+
+            // ADDR2MUX 
+            // 0 - ZERO (value 0)
+            // 1 - offset6 (SEXT[IR[5:0]])
+            // 2 - PCoffset9 (SEXT[IR[8:0]])
+            // 3 - PCoffset11 (SEXT[IR[10:0]])
+            if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 0) { //selection is 0
+                operand2 = 0;
+            } else if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) { //selection is offset6
+                operand2 = SEXT((CURRENT_LATCHES.IR & 0x2F), 5);
+            } else if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 2) { //selection is PCoffset9
+                operand2 = SEXT((CURRENT_LATCHES.IR & 0x1FF), 8);
+            } else if (GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 3) { //selection is PCoffset11
+                operand2 = SEXT((CURRENT_LATCHES.IR & 0x7FF), 10);
+            } else { // other selections?
+                operand2 = 0;
+            }
+
+            if (GetLSHF1(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+                operand1 = operand1 >> 1; //left shift 1
+            }
+
+            NEXT_LATCHES.PC = operand1 + operand2;
+
+        }
+    }
 
 }
