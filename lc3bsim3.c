@@ -716,28 +716,21 @@ void cycle_memory() {
             NEXT_LATCHES.READY = 1; // fourth cycle -> enable ready bit
         }
 
-        if(CURRENT_LATCHES.READY == 1) { // if the memory is ready 
+        if(CURRENT_LATCHES.READY == 1) { // if the memory is ready -> aka 5th cycle
             if (GetR_W(CURRENT_LATCHES.MICROINSTRUCTION) == 1){ // oh hell yeah we writing
                 int dataSize = GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION); // 0 - byte, 1 - word
-                if (dataSize == 0){ // we are writing in a byte
-                    
+                if (dataSize == 0){ // we are writing in a byte 
                     MEMORY[memAddr][MAR0] = (CURRENT_LATCHES.MDR & 0xFF); //write into the correct number
-
                 } else { // we are writing in a word
                     MEMORY[memAddr][0] = (CURRENT_LATCHES.MDR & 0xFF); //write into the correct number
                     MEMORY[memAddr][1] = (CURRENT_LATCHES.MDR & 0xFF00) >> 8; //write into the correct number
                 }
-
-
             }
+            // Once memory is ready, reset
+            cycleCount = 0;
+            NEXT_LATCHES.READY = 0;
         } 
-
-
-
-
     }
-
-    
 
 }
 
