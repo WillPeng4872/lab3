@@ -628,7 +628,7 @@ void setCC(int num){
 */
 
 void eval_micro_sequencer() {
-
+    printf("microsequencer\n");
     // J[5]
     // J[4]
     // J[3]  
@@ -650,7 +650,8 @@ void eval_micro_sequencer() {
         int irP = (CURRENT_LATCHES.IR >> 9) & 0x1;        
 
         NEXT_LATCHES.BEN = (irN & CURRENT_LATCHES.N) | (irZ & CURRENT_LATCHES.Z) | (irP & CURRENT_LATCHES.P);
-        NEXT_LATCHES.STATE_NUMBER = (CURRENT_LATCHES.IR >> 12) && 0x0F; // source is stored in state number 
+        NEXT_LATCHES.STATE_NUMBER = (CURRENT_LATCHES.IR >> 12) & 0x0F; // source is stored in state number 
+        printf("state 32 goes to %d and we have %d\n", NEXT_LATCHES.STATE_NUMBER, CURRENT_LATCHES.IR);
 
     } else {
         int tempJ = GetJ(CURRENT_LATCHES.MICROINSTRUCTION); // we need to seperate J, decompose that MF
@@ -662,7 +663,7 @@ void eval_micro_sequencer() {
         int J3 = (tempJ & 0x08) >> 3; // take it back now yall
         int J2 = (tempJ & 0x04) >> 2; // two hops this time
         int J1 = (tempJ & 0x02) >> 1; // criss cross!
-        int J0 = tempJ & 0x00;
+        int J0 = tempJ & 0x01;
         int cond0;
         int cond1;
 
@@ -682,15 +683,16 @@ void eval_micro_sequencer() {
         cond1 = 0;
         }
 
-        J2 = (J2 | (CURRENT_LATCHES.BEN & ~cond0 & cond1)) & 0x001; // OR it 
-        J1 = (J1 | (CURRENT_LATCHES.READY & cond0 & ~cond1)) & 0x001;
+        J2 = (J2 | (CURRENT_LATCHES.BEN & !cond0 & cond1)) & 0x001; // OR it 
+        J1 = (J1 | (CURRENT_LATCHES.READY & cond0 & !cond1)) & 0x001;
         int IR11 = (CURRENT_LATCHES.IR >> 11) & 0x01; 
         J0 = (J0 | (IR11 & cond0 & cond1));
 
         NEXT_LATCHES.STATE_NUMBER = (J5 << 5) + (J4 << 4) + (J3 << 3) + (J2 << 2) + (J1 << 1) + J0; // Store that funky new number. Alrighty!
+        printf("next state is J[5] - %d, J[4] - %d, J[3] - %d, J[2] - %d, J[1] - %d, J[0] - %d \n", J5, J4, J3, J2, J1, J0);
     }
 
-    for (int i = 0; i < NEXT_LATCHES.MICROINSTRUCTION; i++){ //copy over the instruction from control store
+    for (int i = 0; i < CONTROL_STORE_BITS; i++){ //copy over the instruction from control store
         NEXT_LATCHES.MICROINSTRUCTION[i] = CONTROL_STORE[NEXT_LATCHES.STATE_NUMBER][i];
     }
 
@@ -704,6 +706,7 @@ void eval_micro_sequencer() {
 */
 void cycle_memory() {
     // int cycleCount will keep track of the number of cycles for MEMEN
+    printf("cycle_memory\n");
     if (GetMIO_EN(CURRENT_LATCHES.MICROINSTRUCTION) == 0) { // if MIO is 0, we aren't writing/reading memory, no need
         return;
     } else { // otherwise, begin keeping track
@@ -747,28 +750,28 @@ void cycle_memory() {
 void eval_bus_drivers() {
     
     if (GetGATE_MARMUX(CURRENT_LATCHES.MICROINSTRUCTION)) {
-        gateCS = 0x00;
-        printf("Gate_MARMUX -> eval_bus_drivers");
+        gateCS = 0x01;
+        printf("Gate_MARMUX -> eval_bus_drivers\n");
     } 
 
     if (GetGATE_PC(CURRENT_LATCHES.MICROINSTRUCTION)) {
         gateCS = 0x02;
-        printf("Gate_PC -> eval_bus_drivers");
+        printf("Gate_PC -> eval_bus_drivers\n");
     } 
     
     if (GetGATE_ALU(CURRENT_LATCHES.MICROINSTRUCTION)) {
         gateCS = 0x04;
-        printf("Gate_ALU -> eval_bus_drivers");
+        printf("Gate_ALU -> eval_bus_drivers\n");
     } 
     
     if (GetGATE_SHF(CURRENT_LATCHES.MICROINSTRUCTION)) {
         gateCS = 0x08;
-        printf("Gate_SHF -> eval_bus_drivers");
+        printf("Gate_SHF -> eval_bus_drivers\n");
     } 
     
     if (GetGATE_MDR(CURRENT_LATCHES.MICROINSTRUCTION)) {
         gateCS = 0x10;
-        printf("Gate_MDR -> eval_bus_drivers");
+        printf("Gate_MDR -> eval_bus_drivers\n");
     }
 }
 
@@ -780,10 +783,12 @@ void eval_bus_drivers() {
 */ 
 void drive_bus() {
     
+    printf("drive bus -> gate number - %d\n", gateCS);
+
     if (gateCS == 0) {
         BUS = 0;
-    } else if (gateCS == 0x1) { // gateMARMUX
-
+    } else if (gateCS == 0x01) { // gateMARMUX
+        printf("gateMARMUX - drive_bus\n");
         if (GATE_MARMUX == 0) {
             BUS = (CURRENT_LATCHES.IR & 0x0FF) << 1;
         } else { // GATE_MARMUX = 1 -> output adder
@@ -834,9 +839,11 @@ void drive_bus() {
         }
 
     } else if (gateCS == 0x2) { // GATE_PC is open
+        printf("gatePC - drive_bus\n");
+        printf("%n is on bus", CURRENT_LATCHES.PC);
         BUS = CURRENT_LATCHES.PC;
     } else if (gateCS == 0x04) { // GATE_ALU is open
-
+        printf("gateALU - drive_bus\n");
         // ALU is selected by ALUK (2 bits)
         // Fed into by SR2 MUX and SR1OUT
         // ALUK 
@@ -874,7 +881,7 @@ void drive_bus() {
         }
 
     } else if (gateCS == 0x08) { // GATE_SHF is open
-
+        printf("gateSHF- drive_bus\n");
         int SR1;
 
         if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) { // source 1 = 8:6
@@ -895,17 +902,20 @@ void drive_bus() {
         }
 
     } else if (gateCS == 0x10) { // GATE_MDR is open 
-
+        printf("gateMDR - drive_bus\n");
         int dataSize = GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION);
         int MAR0 = CURRENT_LATCHES.MAR & 0x01; // MAR[0]
+        printf("data size for MDR is %n\n", dataSize);
 
-        if (dataSize = 0) { // if dataSize is 0 -> byte, if 1 -> word
+        if (dataSize == 0) { // if dataSize is 0 -> byte, if 1 -> word
+            printf("loading bus w/ byte from mdr\n");
             if (MAR0 == 1){
                 BUS = Low16bits(SEXT(((CURRENT_LATCHES.MDR & 0xFF00) >> 8), 7)); // get the odd number
             } else {
                 BUS = Low16bits(SEXT((CURRENT_LATCHES.MDR & 0xFF), 7)); // get the even number
             }
         } else { // PLUH!!!! WORD!!! SAY LESS!!! 
+            printf("loading bus w/ word from mdr\n");
             BUS = Low16bits(CURRENT_LATCHES.MDR);
         }
         
@@ -922,6 +932,7 @@ void drive_bus() {
 void latch_datapath_values() {
 
     if (GetLD_MAR(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+        printf("MAR is loaded w/ %n\n", BUS);
         NEXT_LATCHES.MAR = Low16bits(BUS);
     }
 
@@ -950,11 +961,16 @@ void latch_datapath_values() {
     }
 
     if (GetLD_IR(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
+        printf("IR with %d\n", BUS);
         NEXT_LATCHES.IR = Low16bits(BUS);
     }
 
     if (GetLD_REG(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
-
+        if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION) == 0) {
+            NEXT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 9) & 0x7] = Low16bits(BUS);
+        } else {
+            NEXT_LATCHES.REGS[7] = Low16bits(BUS);
+        }
     }
 
     if (GetLD_CC(CURRENT_LATCHES.MICROINSTRUCTION) == 1){
