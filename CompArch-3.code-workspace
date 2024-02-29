@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "CompArch-3",
+			"path": "../../../lab0EE460n/CompArch-3"
+		},
+		{
+			"name": "lab3",
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"symboltable.h": "c"
+		}
+	}
+}
