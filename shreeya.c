@@ -5,16 +5,16 @@
 
 /***************************************************************/
 /*                                                             */
-/*   LC-3b Simulator                                           */
+/*   LC-3b Simulator - Lab 6                                   */
 /*                                                             */
-/*   EE 460N                                                   */
+/*   EE 460N -- Spring 2013                                    */
 /*   The University of Texas at Austin                         */
 /*                                                             */
 /***************************************************************/
 
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /***************************************************************/
 /*                                                             */
@@ -26,18 +26,16 @@
 /***************************************************************/
 /* These are the functions you'll have to write.               */
 /***************************************************************/
-
-void eval_micro_sequencer();
-void cycle_memory();
-void eval_bus_drivers();
-void drive_bus();
-void latch_datapath_values();
-
+void FETCH_stage();
+void DE_stage();
+void AGEX_stage();
+void MEM_stage();
+void SR_stage();
 /***************************************************************/
 /* A couple of useful definitions.                             */
 /***************************************************************/
-#define FALSE 0
 #define TRUE  1
+#define FALSE 0
 
 /***************************************************************/
 /* Use this to avoid overflowing 16 bits on the bus.           */
@@ -48,77 +46,125 @@ void latch_datapath_values();
 /* Definition of the control store layout.                     */
 /***************************************************************/
 #define CONTROL_STORE_ROWS 64
-#define INITIAL_STATE_NUMBER 18
 
 /***************************************************************/
 /* Definition of bit order in control store word.              */
 /***************************************************************/
-enum CS_BITS {                                                  
-    IRD,
-    COND1, COND0,
-    J5, J4, J3, J2, J1, J0,
-    LD_MAR,
-    LD_MDR,
-    LD_IR,
-    LD_BEN,
-    LD_REG,
-    LD_CC,
-    LD_PC,
-    GATE_PC,
-    GATE_MDR,
-    GATE_ALU,
-    GATE_MARMUX,
-    GATE_SHF,
-    PCMUX1, PCMUX0,
-    DRMUX,
-    SR1MUX,
-    ADDR1MUX,
-    ADDR2MUX1, ADDR2MUX0,
-    MARMUX,
-    ALUK1, ALUK0,
-    MIO_EN,
-    R_W,
-    DATA_SIZE,
-    LSHF1,
-    CONTROL_STORE_BITS
+/* control signals from the control store */
+enum CS_BITS {
+  SR1_NEEDED,
+  SR2_NEEDED,
+  DRMUX,
+  
+  ADDR1MUX,
+  ADDR2MUX1, ADDR2MUX0, 
+  LSHF1,
+  ADDRESSMUX,
+  SR2MUX, 
+  ALUK1, ALUK0,
+  ALU_RESULTMUX,
+
+  BR_OP,
+  UNCOND_OP,
+  TRAP_OP,
+  BR_STALL,
+  
+  DCACHE_EN,
+  DCACHE_RW,
+  DATA_SIZE,
+
+  DR_VALUEMUX1, DR_VALUEMUX0,
+  LD_REG,
+  LD_CC,
+  NUM_CONTROL_STORE_BITS
+
 } CS_BITS;
+
+
+enum AGEX_CS_BITS {
+
+  AGEX_ADDR1MUX,
+  AGEX_ADDR2MUX1, AGEX_ADDR2MUX0, 
+  AGEX_LSHF1,
+  AGEX_ADDRESSMUX,
+  AGEX_SR2MUX,
+  AGEX_ALUK1, AGEX_ALUK0, 
+  AGEX_ALU_RESULTMUX,
+
+  AGEX_BR_OP,
+  AGEX_UNCOND_OP,
+  AGEX_TRAP_OP,
+  AGEX_BR_STALL,
+  AGEX_DCACHE_EN,
+  AGEX_DCACHE_RW,
+  AGEX_DATA_SIZE,
+  
+  AGEX_DR_VALUEMUX1, AGEX_DR_VALUEMUX0,
+  AGEX_LD_REG,
+  AGEX_LD_CC,
+  NUM_AGEX_CS_BITS
+} AGEX_CS_BITS;
+
+enum MEM_CS_BITS {
+  MEM_BR_OP,
+  MEM_UNCOND_OP,
+  MEM_TRAP_OP,
+  MEM_BR_STALL,
+  MEM_DCACHE_EN,
+  MEM_DCACHE_RW,
+  MEM_DATA_SIZE,
+
+  MEM_DR_VALUEMUX1, MEM_DR_VALUEMUX0,
+  MEM_LD_REG,
+  MEM_LD_CC,
+  NUM_MEM_CS_BITS
+} MEM_CS_BITS;
+
+enum SR_CS_BITS {
+  SR_DR_VALUEMUX1, SR_DR_VALUEMUX0,
+  SR_LD_REG,
+  SR_LD_CC,
+  NUM_SR_CS_BITS
+} SR_CS_BITS;
+
 
 /***************************************************************/
 /* Functions to get at the control bits.                       */
 /***************************************************************/
-int GetIRD(int *x)           { return(x[IRD]); }
-int GetCOND(int *x)          { return((x[COND1] << 1) + x[COND0]); }
-int GetJ(int *x)             { return((x[J5] << 5) + (x[J4] << 4) +
-				      (x[J3] << 3) + (x[J2] << 2) +
-				      (x[J1] << 1) + x[J0]); }
-int GetLD_MAR(int *x)        { return(x[LD_MAR]); }
-int GetLD_MDR(int *x)        { return(x[LD_MDR]); }
-int GetLD_IR(int *x)         { return(x[LD_IR]); }
-int GetLD_BEN(int *x)        { return(x[LD_BEN]); }
-int GetLD_REG(int *x)        { return(x[LD_REG]); }
-int GetLD_CC(int *x)         { return(x[LD_CC]); }
-int GetLD_PC(int *x)         { return(x[LD_PC]); }
-int GetGATE_PC(int *x)       { return(x[GATE_PC]); }
-int GetGATE_MDR(int *x)      { return(x[GATE_MDR]); }
-int GetGATE_ALU(int *x)      { return(x[GATE_ALU]); }
-int GetGATE_MARMUX(int *x)   { return(x[GATE_MARMUX]); }
-int GetGATE_SHF(int *x)      { return(x[GATE_SHF]); }
-int GetPCMUX(int *x)         { return((x[PCMUX1] << 1) + x[PCMUX0]); }
-int GetDRMUX(int *x)         { return(x[DRMUX]); }
-int GetSR1MUX(int *x)        { return(x[SR1MUX]); }
-int GetADDR1MUX(int *x)      { return(x[ADDR1MUX]); }
-int GetADDR2MUX(int *x)      { return((x[ADDR2MUX1] << 1) + x[ADDR2MUX0]); }
-int GetMARMUX(int *x)        { return(x[MARMUX]); }
-int GetALUK(int *x)          { return((x[ALUK1] << 1) + x[ALUK0]); }
-int GetMIO_EN(int *x)        { return(x[MIO_EN]); }
-int GetR_W(int *x)           { return(x[R_W]); }
-int GetDATA_SIZE(int *x)     { return(x[DATA_SIZE]); } 
-int GetLSHF1(int *x)         { return(x[LSHF1]); }
+int Get_SR1_NEEDED(int *x)     { return (x[SR1_NEEDED]); }
+int Get_SR2_NEEDED(int *x)     { return (x[SR2_NEEDED]); }
+int Get_DRMUX(int *x)          { return (x[DRMUX]);}
+int Get_DE_BR_OP(int *x)       { return (x[BR_OP]); } 
+int Get_ADDR1MUX(int *x)       { return (x[AGEX_ADDR1MUX]); }
+int Get_ADDR2MUX(int *x)       { return ((x[AGEX_ADDR2MUX1] << 1) + x[AGEX_ADDR2MUX0]); }
+int Get_LSHF1(int *x)          { return (x[AGEX_LSHF1]); }
+int Get_ADDRESSMUX(int *x)     { return (x[AGEX_ADDRESSMUX]); }
+int Get_SR2MUX(int *x)          { return (x[AGEX_SR2MUX]); }
+int Get_ALUK(int *x)           { return ((x[AGEX_ALUK1] << 1) + x[AGEX_ALUK0]); }
+int Get_ALU_RESULTMUX(int *x)  { return (x[AGEX_ALU_RESULTMUX]); }
+int Get_BR_OP(int *x)          { return (x[MEM_BR_OP]); }
+int Get_UNCOND_OP(int *x)      { return (x[MEM_UNCOND_OP]); }
+int Get_TRAP_OP(int *x)        { return (x[MEM_TRAP_OP]); }
+int Get_DCACHE_EN(int *x)      { return (x[MEM_DCACHE_EN]); }
+int Get_DCACHE_RW(int *x)      { return (x[MEM_DCACHE_RW]); }
+int Get_DATA_SIZE(int *x)      { return (x[MEM_DATA_SIZE]); } 
+int Get_DR_VALUEMUX1(int *x)   { return ((x[SR_DR_VALUEMUX1] << 1 ) + x[SR_DR_VALUEMUX0]); }
+int Get_AGEX_LD_REG(int *x)    { return (x[AGEX_LD_REG]); }
+int Get_AGEX_LD_CC(int *x)     { return (x[AGEX_LD_CC]); }
+int Get_MEM_LD_REG(int *x)     { return (x[MEM_LD_REG]); }
+int Get_MEM_LD_CC(int *x)      { return (x[MEM_LD_CC]); }
+int Get_SR_LD_REG(int *x)      { return (x[SR_LD_REG]); }
+int Get_SR_LD_CC(int *x)       { return (x[SR_LD_CC]); }
+int Get_DE_BR_STALL(int *x)    { return (x[BR_STALL]); }
+int Get_AGEX_BR_STALL(int *x)  { return (x[AGEX_BR_STALL]); }
+int Get_MEM_BR_STALL(int *x)   { return (x[MEM_BR_STALL]); }
+
+
 
 /***************************************************************/
 /* The control store rom.                                      */
 /***************************************************************/
-int CONTROL_STORE[CONTROL_STORE_ROWS][CONTROL_STORE_BITS];
+int CONTROL_STORE[CONTROL_STORE_ROWS][NUM_CONTROL_STORE_BITS];
 
 /***************************************************************/
 /* Main memory.                                                */
@@ -130,46 +176,73 @@ int CONTROL_STORE[CONTROL_STORE_ROWS][CONTROL_STORE_BITS];
    byte of a word. */
 
 #define WORDS_IN_MEM    0x08000 
-#define MEM_CYCLES      5
 int MEMORY[WORDS_IN_MEM][2];
 
 /***************************************************************/
-
+/* The LC-3b register file.                                      */
+/***************************************************************/
+#define LC3b_REGS 8
+int REGS[LC3b_REGS];
+/***************************************************************/
+/* architectural state */
+/***************************************************************/
+int  PC,  	/* program counter */
+     N,		/* n condition bit */
+     Z = 1,	/* z condition bit */
+     P;		/* p condition bit */ 
+/***************************************************************/
+/* LC-3b State info.                                             */
 /***************************************************************/
 
-/***************************************************************/
-/* LC-3b State info.                                           */
-/***************************************************************/
-#define LC_3b_REGS 8
+typedef struct PipeState_Entry_Struct{
+  
+  /* DE latches */
+int DE_NPC,
+    DE_IR,
+    DE_V,
+    /* AGEX lateches */
+    AGEX_NPC,
+    AGEX_SR1, 
+    AGEX_SR2,
+    AGEX_CC,
+    AGEX_IR,
+    AGEX_DRID,
+    AGEX_V,
+    AGEX_CS[NUM_AGEX_CS_BITS],
+    /* MEM latches */
+    MEM_NPC,
+    MEM_ALU_RESULT,
+    MEM_ADDRESS,
+    MEM_CC,
+    MEM_IR,
+    MEM_DRID,
+    MEM_V,
+    MEM_CS[NUM_MEM_CS_BITS],
+    /* SR latches */
+    SR_NPC, 
+    SR_DATA,
+    SR_ALU_RESULT, 
+    SR_ADDRESS,
+    SR_IR,
+    SR_DRID,
+    SR_V,
+    SR_CS[NUM_SR_CS_BITS];
+    
+} PipeState_Entry;
 
-int RUN_BIT;	/* run bit */
-int BUS;	/* value of the bus */
+/* data structure for latch */
+PipeState_Entry PS, NEW_PS;
 
-typedef struct System_Latches_Struct{
+/* simulator signal */
+int RUN_BIT;
 
-int PC,		/* program counter */
-    MDR,	/* memory data register */
-    MAR,	/* memory address register */
-    IR,		/* instruction register */
-    N,		/* n condition bit */
-    Z,		/* z condition bit */
-    P,		/* p condition bit */
-    BEN;        /* ben register */
-
-int READY;	/* ready bit */
-  /* The ready bit is also latched as you dont want the memory system to assert it 
-     at a bad point in the cycle*/
-
-int REGS[LC_3b_REGS]; /* register file. */
-
-int MICROINSTRUCTION[CONTROL_STORE_BITS]; /* The microintruction */
-
-int STATE_NUMBER; /* Current State Number - Provided for debugging */ 
-} System_Latches;
-
-/* Data Structure for Latch */
-
-System_Latches CURRENT_LATCHES, NEXT_LATCHES;
+/* Internal stall signals */ 
+int   dep_stall,
+      v_de_br_stall,
+      v_agex_br_stall,
+      v_mem_br_stall,
+      mem_stall,
+      icache_r;
 
 /***************************************************************/
 /* A cycle counter.                                            */
@@ -183,16 +256,25 @@ int CYCLE_COUNT;
 /* Purpose   : Print out a list of commands.                   */
 /*                                                             */
 /***************************************************************/
-void help() {                                                    
+void help() {
     printf("----------------LC-3bSIM Help-------------------------\n");
     printf("go               -  run program to completion       \n");
     printf("run n            -  execute program for n cycles    \n");
     printf("mdump low high   -  dump memory from low to high    \n");
-    printf("rdump            -  dump the register & bus values  \n");
+    printf("rdump            -  dump the architectural state    \n");
+    printf("idump            -  dump the internal state         \n");
     printf("?                -  display this help menu          \n");
     printf("quit             -  exit the program                \n\n");
 }
 
+void print_CS(int *CS, int num)
+{
+  int ii ;
+  for ( ii = 0 ; ii < num; ii++) {
+    printf("%d",CS[ii]);
+  }
+  printf("\n");
+}
 /***************************************************************/
 /*                                                             */
 /* Procedure : cycle                                           */
@@ -200,16 +282,14 @@ void help() {
 /* Purpose   : Execute a cycle                                 */
 /*                                                             */
 /***************************************************************/
-void cycle() {                                                
-
-  eval_micro_sequencer();   
-  cycle_memory();
-  eval_bus_drivers();
-  drive_bus();
-  latch_datapath_values();
-
-  CURRENT_LATCHES = NEXT_LATCHES;
-
+void cycle() {
+  NEW_PS = PS; 
+  SR_stage();
+  MEM_stage(); 
+  AGEX_stage();
+  DE_stage();
+  FETCH_stage();
+  PS = NEW_PS; 
   CYCLE_COUNT++;
 }
 
@@ -220,17 +300,18 @@ void cycle() {
 /* Purpose   : Simulate the LC-3b for n cycles.                 */
 /*                                                             */
 /***************************************************************/
-void run(int num_cycles) {                                      
+void run(int num_cycles) {
     int i;
-
+    
     if (RUN_BIT == FALSE) {
-	printf("Can't simulate, Simulator is halted\n\n");
+      printf("Can't simulate, Simulator is halted\n\n");
 	return;
     }
 
     printf("Simulating for %d cycles...\n\n", num_cycles);
     for (i = 0; i < num_cycles; i++) {
-	if (CURRENT_LATCHES.PC == 0x0000) {
+	if (PC == 0x0000) {
+	    cycle();
 	    RUN_BIT = FALSE;
 	    printf("Simulator halted\n\n");
 	    break;
@@ -246,16 +327,17 @@ void run(int num_cycles) {
 /* Purpose   : Simulate the LC-3b until HALTed.                 */
 /*                                                             */
 /***************************************************************/
-void go() {                                                     
-    if (RUN_BIT == FALSE) {
+void go() {
+    if ((RUN_BIT == FALSE) || (PC == 0x0000)) {
 	printf("Can't simulate, Simulator is halted\n\n");
 	return;
     }
-
     printf("Simulating...\n\n");
-    while (CURRENT_LATCHES.PC != 0x0000)
-	cycle();
-    RUN_BIT = FALSE;
+    /* initialization */
+    while (PC != 0x0000)
+      cycle();
+    cycle();
+      RUN_BIT = FALSE;
     printf("Simulator halted\n\n");
 }
 
@@ -263,24 +345,23 @@ void go() {
 /*                                                             */
 /* Procedure : mdump                                           */
 /*                                                             */
-/* Purpose   : Dump a word-aligned region of memory to the     */
-/*             output file.                                    */
+/* Purpose   : Dump a region of memory to the output file.     */
 /*                                                             */
 /***************************************************************/
-void mdump(FILE * dumpsim_file, int start, int stop) {          
+void mdump(FILE * dumpsim_file, int start, int stop) {
     int address; /* this is a byte address */
 
-    printf("\nMemory content [0x%.4x..0x%.4x] :\n", start, stop);
+    printf("\nMemory content [0x%04x..0x%04x] :\n", start, stop);
     printf("-------------------------------------\n");
     for (address = (start >> 1); address <= (stop >> 1); address++)
-	printf("  0x%.4x (%d) : 0x%.2x%.2x\n", address << 1, address << 1, MEMORY[address][1], MEMORY[address][0]);
+	printf("  0x%04x (%d) : 0x%02x%02x\n", address << 1, address << 1, MEMORY[address][1], MEMORY[address][0]);
     printf("\n");
 
     /* dump the memory contents into the dumpsim file */
-    fprintf(dumpsim_file, "\nMemory content [0x%.4x..0x%.4x] :\n", start, stop);
+    fprintf(dumpsim_file, "\nMemory content [0x%04x..0x%04x] :\n", start, stop);
     fprintf(dumpsim_file, "-------------------------------------\n");
     for (address = (start >> 1); address <= (stop >> 1); address++)
-	fprintf(dumpsim_file, " 0x%.4x (%d) : 0x%.2x%.2x\n", address << 1, address << 1, MEMORY[address][1], MEMORY[address][0]);
+	fprintf(dumpsim_file, " 0x%04x (%d) : 0x%02x%02x\n", address << 1, address << 1, MEMORY[address][1], MEMORY[address][0]);
     fprintf(dumpsim_file, "\n");
     fflush(dumpsim_file);
 }
@@ -289,46 +370,194 @@ void mdump(FILE * dumpsim_file, int start, int stop) {
 /*                                                             */
 /* Procedure : rdump                                           */
 /*                                                             */
-/* Purpose   : Dump current register and bus values to the     */   
+/* Purpose   : Dump current architectural state  to the       */   
 /*             output file.                                    */
 /*                                                             */
 /***************************************************************/
-void rdump(FILE * dumpsim_file) {                               
+void rdump(FILE * dumpsim_file) {
     int k; 
 
-    printf("\nCurrent register/bus values :\n");
+    printf("\nCurrent architectural state :\n");
     printf("-------------------------------------\n");
-    printf("Cycle Count  : %d\n", CYCLE_COUNT);
-    printf("PC           : 0x%.4x\n", CURRENT_LATCHES.PC);
-    printf("IR           : 0x%.4x\n", CURRENT_LATCHES.IR);
-    printf("STATE_NUMBER : 0x%.4x\n\n", CURRENT_LATCHES.STATE_NUMBER);//chnage d back to x later
-    printf("BUS          : 0x%.4x\n", BUS);
-    printf("MDR          : 0x%.4x\n", CURRENT_LATCHES.MDR);
-    printf("MAR          : 0x%.4x\n", CURRENT_LATCHES.MAR);
-    printf("CCs: N = %d  Z = %d  P = %d\n", CURRENT_LATCHES.N, CURRENT_LATCHES.Z, CURRENT_LATCHES.P);
+    printf("Cycle Count : %d\n", CYCLE_COUNT);
+    printf("PC          : 0x%04x\n", PC);
+    printf("CCs: N = %d  Z = %d  P = %d\n", N, Z, P);
     printf("Registers:\n");
-    for (k = 0; k < LC_3b_REGS; k++)
-	printf("%d: 0x%.4x\n", k, CURRENT_LATCHES.REGS[k]);
+    for (k = 0; k < LC3b_REGS; k++)
+	printf("%d: 0x%04x\n", k, (REGS[k] & 0xFFFF));
     printf("\n");
 
     /* dump the state information into the dumpsim file */
-    fprintf(dumpsim_file, "\nCurrent register/bus values :\n");
+    fprintf(dumpsim_file, "\nCurrent architectural state :\n");
     fprintf(dumpsim_file, "-------------------------------------\n");
-    fprintf(dumpsim_file, "Cycle Count  : %d\n", CYCLE_COUNT);
-    fprintf(dumpsim_file, "PC           : 0x%.4x\n", CURRENT_LATCHES.PC);
-    fprintf(dumpsim_file, "IR           : 0x%.4x\n", CURRENT_LATCHES.IR);
-    fprintf(dumpsim_file, "STATE_NUMBER : 0x%.4x\n\n", CURRENT_LATCHES.STATE_NUMBER);
-    fprintf(dumpsim_file, "BUS          : 0x%.4x\n", BUS);
-    fprintf(dumpsim_file, "MDR          : 0x%.4x\n", CURRENT_LATCHES.MDR);
-    fprintf(dumpsim_file, "MAR          : 0x%.4x\n", CURRENT_LATCHES.MAR);
-    fprintf(dumpsim_file, "CCs: N = %d  Z = %d  P = %d\n", CURRENT_LATCHES.N, CURRENT_LATCHES.Z, CURRENT_LATCHES.P);
+    fprintf(dumpsim_file, "Cycle Count : %d\n", CYCLE_COUNT);
+    fprintf(dumpsim_file, "PC          : 0x%04x\n", PC);
+    fprintf(dumpsim_file, "CCs: N = %d  Z = %d  P = %d\n", N, Z, P);
     fprintf(dumpsim_file, "Registers:\n");
-    for (k = 0; k < LC_3b_REGS; k++)
-	fprintf(dumpsim_file, "%d: 0x%.4x\n", k, CURRENT_LATCHES.REGS[k]);
+    for (k = 0; k < LC3b_REGS; k++)
+	fprintf(dumpsim_file, "%d: 0x%04x\n", k, (REGS[k] & 0xFFFF));
     fprintf(dumpsim_file, "\n");
     fflush(dumpsim_file);
 }
 
+/***************************************************************/
+/*                                                             */
+/* Procedure : idump                                           */
+/*                                                             */
+/* Purpose   : Dump current internal state to the              */
+/*             output file.                                    */
+/*                                                             */
+/***************************************************************/
+void idump(FILE * dumpsim_file) {
+    int k; 
+
+    printf("\nCurrent architectural state :\n");
+    printf("-------------------------------------\n");
+    printf("Cycle Count     : %d\n", CYCLE_COUNT);
+    printf("PC              : 0x%04x\n", PC);
+    printf("CCs: N = %d  Z = %d  P = %d\n", N, Z, P);
+    printf("Registers:\n");
+    for (k = 0; k < LC3b_REGS; k++)
+	printf("%d: 0x%04x\n", k, (REGS[k] & 0xFFFF));
+    printf("\n");
+    
+    printf("------------- Stall Signals -------------\n");
+    printf("ICACHE_R        :  %d\n", icache_r);
+    printf("DEP_STALL       :  %d\n", dep_stall);
+    printf("V_DE_BR_STALL   :  %d\n", v_de_br_stall);
+    printf("V_AGEX_BR_STALL :  %d\n", v_agex_br_stall);
+    printf("MEM_STALL       :  %d\n", mem_stall);
+    printf("V_MEM_BR_STALL  :  %d\n", v_mem_br_stall);    
+    printf("\n");
+
+    printf("------------- DE   Latches --------------\n");
+    printf("DE_NPC          :  0x%04x\n", PS.DE_NPC );
+    printf("DE_IR           :  0x%04x\n", PS.DE_IR );
+    printf("DE_V            :  %d\n", PS.DE_V);
+    printf("\n");
+    
+    printf("------------- AGEX Latches --------------\n");
+    printf("AGEX_NPC        :  0x%04x\n", PS.AGEX_NPC );
+    printf("AGEX_SR1        :  0x%04x\n", PS.AGEX_SR1 );
+    printf("AGEX_SR2        :  0x%04x\n", PS.AGEX_SR2 );
+    printf("AGEX_CC         :  %d\n", PS.AGEX_CC );
+    printf("AGEX_IR         :  0x%04x\n", PS.AGEX_IR );
+    printf("AGEX_DRID       :  %d\n", PS.AGEX_DRID);
+    printf("AGEX_CS         :  ");
+    for ( k = 0 ; k < NUM_AGEX_CS_BITS; k++) {
+      printf("%d",PS.AGEX_CS[k]);
+    }
+    printf("\n");
+    printf("AGEX_V          :  %d\n", PS.AGEX_V);
+    printf("\n");
+
+    printf("------------- MEM  Latches --------------\n");
+    printf("MEM_NPC         :  0x%04x\n", PS.MEM_NPC );
+    printf("MEM_ALU_RESULT  :  0x%04x\n", PS.MEM_ALU_RESULT );
+    printf("MEM_ADDRESS     :  0x%04x\n", PS.MEM_ADDRESS ); 
+    printf("MEM_CC          :  %d\n", PS.MEM_CC );
+    printf("MEM_IR          :  0x%04x\n", PS.MEM_IR );
+    printf("MEM_DRID        :  %d\n", PS.MEM_DRID);
+    printf("MEM_CS          :  ");
+    for ( k = 0 ; k < NUM_MEM_CS_BITS; k++) {
+      printf("%d",PS.MEM_CS[k]);
+    }
+    printf("\n");
+    printf("MEM_V           :  %d\n", PS.MEM_V);
+    printf("\n");
+
+    printf("------------- SR   Latches --------------\n");
+    printf("SR_NPC          :  0x%04x\n", PS.SR_NPC );
+    printf("SR_DATA         :  0x%04x\n", PS.SR_DATA );
+    printf("SR_ALU_RESULT   :  0x%04x\n", PS.SR_ALU_RESULT );
+    printf("SR_ADDRESS      :  0x%04x\n", PS.SR_ADDRESS );
+    printf("SR_IR           :  0x%04x\n", PS.SR_IR );
+    printf("SR_DRID         :  %d\n", PS.SR_DRID);
+    printf("SR_CS           :  ");
+    for ( k = 0 ; k < NUM_SR_CS_BITS; k++) {
+      printf("%d",PS.SR_CS[k]);
+    }
+    printf("\n");
+    printf("SR_V            :  %d\n", PS.SR_V);
+    
+    printf("\n");
+
+    /* dump the state information into the dumpsim file */
+    fprintf(dumpsim_file, "\nCurrent register/bus values :\n");
+    fprintf(dumpsim_file,"\nCurrent architectural state :\n");
+    fprintf(dumpsim_file,"-------------------------------------\n");
+    fprintf(dumpsim_file,"Cycle Count     : %d\n", CYCLE_COUNT);
+    fprintf(dumpsim_file,"PC              : 0x%04x\n", PC);
+    fprintf(dumpsim_file,"CCs: N = %d  Z = %d  P = %d\n", N, Z, P);
+    fprintf(dumpsim_file,"Registers:\n");
+    for (k = 0; k < LC3b_REGS; k++)
+      fprintf(dumpsim_file,"%d: 0x%04x\n", k, (REGS[k] & 0xFFFF));
+    fprintf(dumpsim_file,"\n");
+    
+    fprintf(dumpsim_file,"------------- Stall Signals -------------\n");
+    fprintf(dumpsim_file,"ICACHE_R        :  %d\n", icache_r);
+    fprintf(dumpsim_file,"DEP_STALL       :  %d\n", dep_stall);
+    fprintf(dumpsim_file,"V_DE_BR_STALL   :  %d\n", v_de_br_stall);
+    fprintf(dumpsim_file,"V_AGEX_BR_STALL :  %d\n", v_agex_br_stall);
+    fprintf(dumpsim_file,"MEM_STALL       :  %d\n", mem_stall);
+    fprintf(dumpsim_file,"V_MEM_BR_STALL  :  %d\n", v_mem_br_stall);
+    fprintf(dumpsim_file,"\n");
+
+    fprintf(dumpsim_file,"------------- DE   Latches --------------\n");
+    fprintf(dumpsim_file,"DE_NPC          :  0x%04x\n", PS.DE_NPC );
+    fprintf(dumpsim_file,"DE_IR           :  0x%04x\n", PS.DE_IR );
+    fprintf(dumpsim_file,"DE_V            :  %d\n", PS.DE_V);
+    fprintf(dumpsim_file,"\n");
+    
+    fprintf(dumpsim_file,"------------- AGEX Latches --------------\n");
+    fprintf(dumpsim_file,"AGEX_NPC        :  0x%04x\n", PS.AGEX_NPC );
+    fprintf(dumpsim_file,"AGEX_SR1        :  0x%04x\n", PS.AGEX_SR1 );
+    fprintf(dumpsim_file,"AGEX_SR2        :  0x%04x\n", PS.AGEX_SR2 );
+    fprintf(dumpsim_file,"AGEX_CC         :  %d\n", PS.AGEX_CC );
+    fprintf(dumpsim_file,"AGEX_IR         :  0x%04x\n", PS.AGEX_IR );
+    fprintf(dumpsim_file,"AGEX_DRID       :  %d\n", PS.AGEX_DRID);
+    fprintf(dumpsim_file,"AGEX_CS         :  ");
+    for ( k = 0 ; k < NUM_AGEX_CS_BITS; k++) {
+      fprintf(dumpsim_file,"%d",PS.AGEX_CS[k]);
+    }
+    fprintf(dumpsim_file,"\n");
+    fprintf(dumpsim_file,"AGEX_V          :  %d\n", PS.AGEX_V);
+    fprintf(dumpsim_file,"\n");
+
+    fprintf(dumpsim_file,"------------- MEM  Latches --------------\n");
+    fprintf(dumpsim_file,"MEM_NPC         :  0x%04x\n", PS.MEM_NPC );
+    fprintf(dumpsim_file,"MEM_ALU_RESULT  :  0x%04x\n", PS.MEM_ALU_RESULT );
+    fprintf(dumpsim_file,"MEM_ADDRESS     :  0x%04x\n", PS.MEM_ADDRESS ); 
+    fprintf(dumpsim_file,"MEM_CC          :  %d\n", PS.MEM_CC );
+    fprintf(dumpsim_file,"MEM_IR          :  0x%04x\n", PS.MEM_IR );
+    fprintf(dumpsim_file,"MEM_DRID        :  %d\n", PS.MEM_DRID);
+    fprintf(dumpsim_file,"MEM_CS          :  ");
+    for ( k = 0 ; k < NUM_MEM_CS_BITS; k++) {
+      fprintf(dumpsim_file,"%d",PS.MEM_CS[k]);
+    }
+    fprintf(dumpsim_file,"\n");
+    fprintf(dumpsim_file,"MEM_V           :  %d\n", PS.MEM_V);
+    fprintf(dumpsim_file,"\n");
+
+    fprintf(dumpsim_file,"------------- SR   Latches --------------\n");
+    fprintf(dumpsim_file,"SR_NPC          :  0x%04x\n", PS.SR_NPC );
+    fprintf(dumpsim_file,"SR_DATA         :  0x%04x\n",PS.SR_DATA );
+    fprintf(dumpsim_file,"SR_ALU_RESULT   :  0x%04x\n", PS.SR_ALU_RESULT );
+    fprintf(dumpsim_file,"SR_ADDRESS      :  0x%04x\n", PS.SR_ADDRESS );
+    fprintf(dumpsim_file,"SR_IR           :  0x%04x\n", PS.SR_IR );
+    fprintf(dumpsim_file,"SR_DRID         :  %d\n", PS.SR_DRID);
+    fprintf(dumpsim_file,"SR_CS           :  ");
+    for ( k = 0 ; k < NUM_SR_CS_BITS; k++) {
+    fprintf(dumpsim_file, "%d",PS.SR_CS[k]);
+    }
+    fprintf(dumpsim_file,"\n");
+    fprintf(dumpsim_file,"SR_V            :  %d\n", PS.SR_V);
+    
+    fprintf(dumpsim_file,"\n");
+    fflush(dumpsim_file);
+    
+    
+}
 /***************************************************************/
 /*                                                             */
 /* Procedure : get_command                                     */
@@ -336,7 +565,7 @@ void rdump(FILE * dumpsim_file) {
 /* Purpose   : Read a command from standard input.             */  
 /*                                                             */
 /***************************************************************/
-void get_command(FILE * dumpsim_file) {                         
+void get_command(FILE * dumpsim_file) {
     char buffer[20];
     int start, stop, cycles;
 
@@ -375,6 +604,11 @@ void get_command(FILE * dumpsim_file) {
 	}
 	break;
 
+    case 'I':
+    case 'i':
+        idump(dumpsim_file);
+        break;
+	
     default:
 	printf("Invalid Command\n");
 	break;
@@ -388,7 +622,7 @@ void get_command(FILE * dumpsim_file) {
 /* Purpose   : Load microprogram into control store ROM        */ 
 /*                                                             */
 /***************************************************************/
-void init_control_store(char *ucode_filename) {                 
+void init_control_store(char *ucode_filename) {
     FILE *ucode;
     int i, j, index;
     char line[200];
@@ -412,7 +646,7 @@ void init_control_store(char *ucode_filename) {
 	/* Put in bits one at a time. */
 	index = 0;
 
-	for (j = 0; j < CONTROL_STORE_BITS; j++) {
+	for (j = 0; j < NUM_CONTROL_STORE_BITS; j++) {
 	    /* Needs to find enough bits in line. */
 	    if (line[index] == '\0') {
 		printf("Error: Too few control bits in micro-code file: %s\nLine: %d\n",
@@ -429,7 +663,6 @@ void init_control_store(char *ucode_filename) {
 	    CONTROL_STORE[i][j] = (line[index] == '0') ? 0:1;
 	    index++;
 	}
-
 	/* Warn about extra bits in line. */
 	if (line[index] != '\0')
 	    printf("Warning: Extra bit(s) in control store file %s. Line: %d\n",
@@ -438,20 +671,40 @@ void init_control_store(char *ucode_filename) {
     printf("\n");
 }
 
-/************************************************************/
-/*                                                          */
-/* Procedure : init_memory                                  */
-/*                                                          */
-/* Purpose   : Zero out the memory array                    */
-/*                                                          */
-/************************************************************/
-void init_memory() {                                           
+/***************************************************************/
+/*                                                             */
+/* Procedure : init_memory                                     */
+/*                                                             */
+/* Purpose   : Zero out the memory array                       */
+/*                                                             */
+/***************************************************************/
+void init_memory() {
     int i;
-
-    for (i=0; i < WORDS_IN_MEM; i++) {
+    
+     for (i=0; i < WORDS_IN_MEM; i++) {
 	MEMORY[i][0] = 0;
 	MEMORY[i][1] = 0;
     }
+}
+
+
+/***************************************************************/
+/*                                                             */
+/* Procedure : init_state                                      */
+/*                                                             */
+/* Purpose   : Zero out all latches and registers              */
+/*                                                             */
+/***************************************************************/
+void init_state() {
+  
+  memset(&PS, 0 ,sizeof(PipeState_Entry)); 
+  memset(&NEW_PS, 0 , sizeof(PipeState_Entry));
+  
+  dep_stall       = 0; 
+  v_de_br_stall   = 0;
+  v_agex_br_stall = 0;
+  v_mem_br_stall  = 0;
+  mem_stall       = 0;
 }
 
 /**************************************************************/
@@ -461,7 +714,7 @@ void init_memory() {
 /* Purpose   : Load program and service routines into mem.    */
 /*                                                            */
 /**************************************************************/
-void load_program(char *program_filename) {                   
+void load_program(char *program_filename) {
     FILE * prog;
     int ii, word, program_base;
 
@@ -474,7 +727,7 @@ void load_program(char *program_filename) {
 
     /* Read in the program. */
     if (fscanf(prog, "%x\n", &word) != EOF)
-	program_base = word >> 1;
+	program_base = word >> 1 ;
     else {
 	printf("Error: Program file is empty\n");
 	exit(-1);
@@ -488,15 +741,14 @@ void load_program(char *program_filename) {
 		   program_filename, ii);
 	    exit(-1);
 	}
-
+	
 	/* Write the word to memory array. */
 	MEMORY[program_base + ii][0] = word & 0x00FF;
 	MEMORY[program_base + ii][1] = (word >> 8) & 0x00FF;
 	ii++;
     }
 
-    if (CURRENT_LATCHES.PC == 0) CURRENT_LATCHES.PC = (program_base << 1);
-
+    if (PC == 0) PC  = program_base << 1 ;
     printf("Read %d words from program into memory.\n\n", ii);
 }
 
@@ -508,30 +760,69 @@ void load_program(char *program_filename) {
 /*             and set up initial state of the machine.        */
 /*                                                             */
 /***************************************************************/
-void initialize(char *ucode_filename, char *program_filename, int num_prog_files) { 
+void initialize(char *ucode_filename, char *program_filename, int num_prog_files) {
     int i;
     init_control_store(ucode_filename);
 
     init_memory();
+
     for ( i = 0; i < num_prog_files; i++ ) {
 	load_program(program_filename);
 	while(*program_filename++ != '\0');
     }
-    CURRENT_LATCHES.Z = 1;
-    CURRENT_LATCHES.STATE_NUMBER = INITIAL_STATE_NUMBER;
-    memcpy(CURRENT_LATCHES.MICROINSTRUCTION, CONTROL_STORE[INITIAL_STATE_NUMBER], sizeof(int)*CONTROL_STORE_BITS);
-
-    NEXT_LATCHES = CURRENT_LATCHES;
-
+    init_state();
+    
     RUN_BIT = TRUE;
 }
 
 /***************************************************************/
 /*                                                             */
+/* dcache_access                                               */
+/*                                                             */
+/***************************************************************/
+void dcache_access(int dcache_addr, int *read_word, int write_word, int *dcache_r, 
+		    int mem_w0, int mem_w1) {
+  
+  int addr = dcache_addr >> 1 ; 
+  int random = CYCLE_COUNT % 9;
+
+  if (!random) {
+    *dcache_r = 0;
+    *read_word = 0xfeed ;
+  }
+  else {
+    *dcache_r = 1;
+    
+    *read_word = (MEMORY[addr][1] << 8) | (MEMORY[addr][0] & 0x00FF);
+    if(mem_w0) MEMORY[addr][0] = write_word & 0x00FF;
+    if(mem_w1) MEMORY[addr][1] = (write_word & 0xFF00) >> 8;
+  }
+}
+/***************************************************************/
+/*                                                             */
+/* icache_access                                               */
+/*                                                             */
+/***************************************************************/
+void icache_access(int icache_addr, int *read_word, int *icache_r) {
+	
+  int addr = icache_addr >> 1 ; 
+  int random = CYCLE_COUNT % 13;
+
+  if (!random) {
+    *icache_r = 0;
+    *read_word = 0xfeed;
+  }
+  else {
+    *icache_r = 1;
+    *read_word = MEMORY[addr][1] << 8 | MEMORY[addr][0];
+  }
+}
+/***************************************************************/
+/*                                                             */
 /* Procedure : main                                            */
 /*                                                             */
 /***************************************************************/
-int main(int argc, char *argv[]) {                              
+int main(int argc, char *argv[]) {
     FILE * dumpsim_file;
 
     /* Error Checking */
@@ -552,410 +843,50 @@ int main(int argc, char *argv[]) {
 
     while (1)
 	get_command(dumpsim_file);
-
 }
+
 
 /***************************************************************/
 /* Do not modify the above code.
    You are allowed to use the following global variables in your
    code. These are defined above.
-
-   CONTROL_STORE
+   
+   RUN_BIT
+   REGS
    MEMORY
-   BUS
 
-   CURRENT_LATCHES
-   NEXT_LATCHES
+   PC
+   N
+   Z
+   P
+
+   dep_stall
+   v_de_br_stall
+   v_agex_br_stall
+   v_mem_br_stall
+   mem_stall 
+   icache_r
+ 
+   PS
+   NEW_PS
+
 
    You may define your own local/global variables and functions.
    You may use the functions to get at the control bits defined
    above.
 
+
    Begin your code here 	  			       */
 /***************************************************************/
-
-
-void eval_micro_sequencer() {//test this
-
-  /* 
-   * Evaluate the address of the next state according to the 
-   * micro sequencer logic. Latch the next microinstruction.
-   */
-  //CURRENT_LATCHES.READY you need this for a state transition
-  //first check the condition bits
-
-  //if 00 you can immediately transition using the j bits
-
-  //CURRENT_LATCHES.MICROINSTRUCTION[1] is cond1
-  //CURRENT_LATCHES.MICROINSTRUCTION[2] is cond0
-  
-
- if(GetIRD(CURRENT_LATCHES.MICROINSTRUCTION)){
-      NEXT_LATCHES.BEN = ((CURRENT_LATCHES.IR & 0x0800) && CURRENT_LATCHES.N) || ((CURRENT_LATCHES.IR & 0x0400) && CURRENT_LATCHES.Z) || ((CURRENT_LATCHES.IR & 0x0200) && CURRENT_LATCHES.P);
-      NEXT_LATCHES.STATE_NUMBER = (CURRENT_LATCHES.IR >> 12) & 0x0F;
- }
- else{
-  int next = GetJ(CURRENT_LATCHES.MICROINSTRUCTION);
-
-  switch (GetCOND(CURRENT_LATCHES.MICROINSTRUCTION))
-  {
-    case 0b01:
-        if(CURRENT_LATCHES.READY){
-            next|=2;}
-        break;
-
-    case 0b10:
-        if(CURRENT_LATCHES.BEN){
-            next|=4;
-        }
-        break;
-
-    case 0b11:  
-        if(CURRENT_LATCHES.IR & 0x0800){
-            next|=1;
-        }
-        break;
-
-    default://00
-        break;
-  }
-    NEXT_LATCHES.STATE_NUMBER = next;
-
- }
-  for(int i=0; i<CONTROL_STORE_BITS; i++){
-    NEXT_LATCHES.MICROINSTRUCTION[i] = CONTROL_STORE[NEXT_LATCHES.STATE_NUMBER][i];
-  }
-
-
-
-}
-
-int MEMEN = 0;
-#define Low8bits(x) ((x) & 0x00FF)
-#define High8bits(x) (((x) & 0x00FF00)>>8)
-
-int SEXT(int n, int num);
-
-
-
-
-void cycle_memory() {
- 
-  /* 
-   * This function emulates memory and the WE logic. 
-   * Keep track of which cycle of MEMEN we are dealing with.  
-   * If fourth, we need to latch Ready bit at the end of 
-   * cycle to prepare microsequencer for the fifth cycle.  
-   */
-   if (GetMIO_EN(CURRENT_LATCHES.MICROINSTRUCTION)==0) {return;}
-
-   MEMEN ++;
-
-   if (MEMEN == 4) {
-      NEXT_LATCHES.READY = 1;
-   }
-   if (GetMIO_EN(CURRENT_LATCHES.MICROINSTRUCTION)==1) {
-      if (CURRENT_LATCHES.READY) {
-         if (GetR_W(CURRENT_LATCHES.MICROINSTRUCTION)) {
-            if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)) {
-               MEMORY[CURRENT_LATCHES.MAR >> 1][0] = CURRENT_LATCHES.MDR & 0x00FF;
-               MEMORY[CURRENT_LATCHES.MAR >> 1][1] = (CURRENT_LATCHES.MDR >> 8) & 0x00FF;
-            } else {
-               MEMORY[CURRENT_LATCHES.MAR >> 1][CURRENT_LATCHES.MAR & 0x01] = CURRENT_LATCHES.MDR & 0x00FF;
-            }
-         }
-         NEXT_LATCHES.READY = 0;
-         MEMEN = 0;
-      }
-   }
-
-}
-int gate_num;
-void eval_bus_drivers() {
-
-  /* 
-   * Datapath routine emulating operations before driving the bus.
-   * Evaluate the input of tristate drivers 
-   *         Gate_MARMUX,
-   *		 Gate_PC,
-   *		 Gate_ALU,
-   *		 Gate_SHF,
-   *		 Gate_MDR.
-   */    
-    if(GetGATE_MARMUX(CURRENT_LATCHES.MICROINSTRUCTION)){
-        gate_num = 1;
-    }
-    else if(GetGATE_PC(CURRENT_LATCHES.MICROINSTRUCTION)){
-        gate_num = 2;
-    }
-    else if(GetGATE_ALU(CURRENT_LATCHES.MICROINSTRUCTION)){
-        gate_num = 3;
-    }
-    else if(GetGATE_SHF(CURRENT_LATCHES.MICROINSTRUCTION)){
-        gate_num = 4;
-    }
-    else if(GetGATE_MDR(CURRENT_LATCHES.MICROINSTRUCTION)){
-        gate_num = 5; 
-    }
-    else{//there is a possibility that no gate is turned on like when we don't need to put data on the bus
-        gate_num = 0; 
-    }
-
-}
-
-
-void drive_bus() {
-
-  /* 
-   * Datapath routine for driving the bus from one of the 5 possible 
-   * tristate drivers.
-   *  
-   */   
-  
-        int imm5 = 0;
-        int sr1 = 0;
-        int sr2 = 0;    
-    switch (gate_num)
-    {
-        case 1://gatemarmux
-        if(GetMARMUX(CURRENT_LATCHES.MICROINSTRUCTION)==0){//select LSHF(ZEXT[IR[7:0]],1)
-            BUS = (CURRENT_LATCHES.IR & 0x00FF) << 1;
-        }
-        else{//select output of addy adder
-                //2 inputs of addy adder
-                int input1 = 0;
-                int input2 = 0;
-
-
-            
-                //first figure out input 2 based on adder2MUX
-                if(GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION)==1)//select SEXT[IR[5:0]]
-                {input2 = SEXT(CURRENT_LATCHES.IR & 0x002F, 6);}
-                else if(GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION)==2)//select SEXT[IR[8:0]]
-                {input2 = SEXT(CURRENT_LATCHES.IR & 0x01FF, 9);}
-                else if(GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION)==3)//select SEXT[IR[10:0]]
-                {input2 = SEXT(CURRENT_LATCHES.IR & 0x07FF, 11);}
-                else{input2 = 0;}//0 select 0 for input 1
-
-                if(GetLSHF1(CURRENT_LATCHES.MICROINSTRUCTION)){input2<<=1;}
-
-            if(GetMARMUX(CURRENT_LATCHES.MICROINSTRUCTION)){
-                //now figure out input1 based on addr1mux
-                if(!GetADDR1MUX(CURRENT_LATCHES.MICROINSTRUCTION))//PC
-                {input1 = CURRENT_LATCHES.PC;}
-                else{
-                    //lets look at sr1mux
-                    if(GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)){
-                        input1 = CURRENT_LATCHES.REGS[((CURRENT_LATCHES.IR>>6) & 0x0007)];
-                    }
-                    else{
-                        input1 = CURRENT_LATCHES.REGS[((CURRENT_LATCHES.IR>>9) & 0x07)];
-                    }
-
-
-                }
-
-                 
-
-            }
-
-                 BUS = (input1+input2); 
-        }
-        break;
-
-        case 2://gatepc
-        BUS = CURRENT_LATCHES.PC;
-        break;
-
-        case 3://gatealu
-
-
-        if(GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)){sr1 = ((CURRENT_LATCHES.IR>>6) & 0x07);}
-        else{sr1 = (CURRENT_LATCHES.IR >> 9) & 0x07;}
-
-        if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION)==3){//3 //PASSA
-            BUS = Low16bits(CURRENT_LATCHES.REGS[sr1]);
-        }
-        else{
-            //first figure out the addressing mode i think its bit 5 of IR
-            if(CURRENT_LATCHES.IR & 0x0020)//immediate
-            {
-                imm5 = SEXT(CURRENT_LATCHES.IR & 0x001F, 5);
-                sr1 = CURRENT_LATCHES.REGS[sr1];
-                if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION)==0){BUS = Low16bits(sr1+imm5);}
-                else if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION)==1){BUS = Low16bits(sr1&imm5);}
-                else if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION)==2){BUS = Low16bits(sr1^imm5);}
-            }
-            else//register
-            {
-                sr2 = CURRENT_LATCHES.REGS[CURRENT_LATCHES.IR & 0x07];
-                sr1 = CURRENT_LATCHES.REGS[sr1];
-
-                if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION)==0){BUS = Low16bits(sr1+sr2);}
-                else if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION)==1){BUS = Low16bits(sr1&sr2);}
-                else if(GetALUK(CURRENT_LATCHES.MICROINSTRUCTION)==2){BUS = Low16bits(sr1^sr2);}      
-            }
-
-        break;
-
-        case 4://gateshf
-        if(GetGATE_SHF(CURRENT_LATCHES.MICROINSTRUCTION)==1){
-            //lets look at the inputs
-            //the only input comes from SR1 --> so we only need to check SR1Mux
-            int sr1 = 0;
-            if(GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)){sr1 = ((CURRENT_LATCHES.IR>>6) & 0x07);}
-            else{sr1 = (CURRENT_LATCHES.IR >> 9) & 0x07;}
-
-            sr1 = CURRENT_LATCHES.REGS[sr1];
-
-            int sh = CURRENT_LATCHES.IR & 0x0F;
-
-            if((CURRENT_LATCHES.IR & 0x0010)==0)//check bit 4 is 0 then its LSHF
-            {BUS = Low16bits(sr1<<sh);}
-            else{
-
-                if((CURRENT_LATCHES.IR & 0x0020)==0)
-                {
-                    BUS = Low16bits(sr1>>sh);
-                }
-                else
-                {
-                    BUS = Low16bits(SEXT(sr1>>sh, 16-sh));
-                }
-            }
-        }
-        break;
-
-        case 5://gatemdr
-        if (GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)==1) 
-        {BUS = Low16bits(CURRENT_LATCHES.MDR);}
-        else 
-        {BUS = Low16bits(SEXT(CURRENT_LATCHES.MDR & 0x00FF, 8));}
-        break;
-    
-        default://no gate is on (0)
-        BUS = 0;
-        break;
-    }
-
-    }
-}
-void setCC(int num);
-
-void latch_datapath_values() {
-
-  /* 
-   * Datapath routine for computing all functions that need to latch
-   * values in the data path at the end of this cycle.  Some values
-   * require sourcing the bus; therefore, this routine has to come 
-   * after drive_bus.
-   */     
-
-  //LD MAR
-  if(GetLD_MAR(CURRENT_LATCHES.MICROINSTRUCTION)==1)
-  {NEXT_LATCHES.MAR = Low16bits(BUS);}
-
-  //LDIR
-  if(GetLD_IR(CURRENT_LATCHES.MICROINSTRUCTION)==1)
-  {NEXT_LATCHES.IR = Low16bits(BUS);}
-
- //LD Reg
-  if(GetLD_REG(CURRENT_LATCHES.MICROINSTRUCTION)==1)
-  {
-      if (GetDRMUX(CURRENT_LATCHES.MICROINSTRUCTION) == 1) 
-      {
-        NEXT_LATCHES.REGS[7] = Low16bits(BUS);
-      }
-      else{
-        NEXT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 9) & 0x07] = Low16bits(BUS);
-      }
-  }
-
-//   //LDMDR
-  if(GetLD_MDR(CURRENT_LATCHES.MICROINSTRUCTION)==1)
-  {
-    //what if we get it via memory access
-    if(GetMIO_EN(CURRENT_LATCHES.MICROINSTRUCTION)==1){
-        if(CURRENT_LATCHES.READY){
-            if(GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)){//word allign'
-                  NEXT_LATCHES.MDR = MEMORY[CURRENT_LATCHES.MAR>>1][0] & 0x00FF;
-                  NEXT_LATCHES.MDR |= ((MEMORY[CURRENT_LATCHES.MAR>>1][1] & 0x00FF) << 8);
-            }
-            else{//byte allign
-                NEXT_LATCHES.MDR = SEXT(MEMORY[CURRENT_LATCHES.MAR>>1][CURRENT_LATCHES.MAR %2], 8);
-            }
-            MEMEN = 0;
-            NEXT_LATCHES.READY = 0;
-        }
-    } 
-    else{
-        if(!GetDATA_SIZE(CURRENT_LATCHES.MICROINSTRUCTION)){
-            NEXT_LATCHES.MDR = BUS & 0x00FF;
-        }
-        else{
-            NEXT_LATCHES.MDR = Low16bits(BUS);
-        }
-    }
-    
-  }
-  
-  //LD PC
-  if(GetLD_PC(CURRENT_LATCHES.MICROINSTRUCTION)==1){
-        int input1,input2;
-        switch(GetPCMUX(CURRENT_LATCHES.MICROINSTRUCTION)){
-            case 0:
-            NEXT_LATCHES.PC = CURRENT_LATCHES.PC+2;
-            break;
-            case 1:
-            NEXT_LATCHES.PC = Low16bits(BUS);
-            break;
-            case 2:
-            if(!GetADDR1MUX(CURRENT_LATCHES.MICROINSTRUCTION))
-            {
-                input1 = CURRENT_LATCHES.PC;
-            }
-            else{
-                if (GetSR1MUX(CURRENT_LATCHES.MICROINSTRUCTION)){
-                    input1 = (CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 6) & 0x07]);
-                } 
-                else{
-                    input1 = (CURRENT_LATCHES.REGS[(CURRENT_LATCHES.IR >> 9) & 0x07]); 
-                }
-            }
-
-                //first figure out input 2 based on adder2MUX
-                if(GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION)==1)//select SEXT[IR[5:0]]
-                {input2 = SEXT(CURRENT_LATCHES.IR & 0x002F, 6);}
-                else if(GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION)==2)//select SEXT[IR[8:0]]
-                {input2 = SEXT(CURRENT_LATCHES.IR & 0x01FF, 9);}
-                else if(GetADDR2MUX(CURRENT_LATCHES.MICROINSTRUCTION)==3)//select SEXT[IR[10:0]]
-                {input2 = SEXT(CURRENT_LATCHES.IR & 0x07FF, 11);}
-                else{input2 = 0;}//0 select 0 for input 1
-
-            if(GetLSHF1(CURRENT_LATCHES.MICROINSTRUCTION)){input2<<=1;}
-            NEXT_LATCHES.PC = input1+input2;
-
-
-
-            break;
-            default:
-            break;
-        }
-  }
-
-
-  //LD CC
-  if(GetLD_CC(CURRENT_LATCHES.MICROINSTRUCTION)==1){
-    setCC(BUS);
-  }
-
-
-
-
-}
+#define COPY_AGEX_CS_START 3 
+#define COPY_MEM_CS_START 9
+#define COPY_SR_CS_START  7
 #define IndexBit(inst, n) ((inst & (1 << n)) >> n)  /* Macro for bit indexing within int */
 
-int SEXT(int n, int num) {//n is the number num is the bits
+int SEXT(int n, int num) {
+  //first argument is bit
+  //second argument data
+  //n is the number num is the bits
   // Fill in 1 for bit[n] onwards
   // int is 32 bits
   int mask = 0;
@@ -970,22 +901,391 @@ int SEXT(int n, int num) {//n is the number num is the bits
     //return n;
   }
 }
-void setCC(int num){
-    num = Low16bits(num);
-    if(num==0){
-      NEXT_LATCHES.N = 0;
-      NEXT_LATCHES.Z = 1;
-      NEXT_LATCHES.P = 0;
-    }
-    else if(num>>15==1){
-      NEXT_LATCHES.N = 1;
-      NEXT_LATCHES.Z = 0;
-      NEXT_LATCHES.P = 0;
-    }
-    else{
-      NEXT_LATCHES.N = 0;
-      NEXT_LATCHES.Z = 0;
-      NEXT_LATCHES.P = 1;
-    }
+
+/* Signals generated by SR stage and needed by previous stages in the
+   pipeline are declared below. */
+int sr_reg_data, 
+    sr_n, sr_z, sr_p,
+    v_sr_ld_cc,
+    v_sr_ld_reg,
+    sr_reg_id;
+/* Lets have signals generated by AGEX stage here as well */
+//there's also v_agex_br_stall but thats with the rest of the stall signals
+int v_agex_ld_cc,
+v_agex_ld_reg;
+/* Lets have signals generated by MEM stage here as well */
+int v_mem_ld_cc, 
+v_mem_ld_reg;
+
+//GLOBAL VARs
+int target_pc;
+int trap_pc;
+int load_pc_from = 0;//0 is pc+2, 1 is MEM STage location, 2 is TRAP
+
+
+/************************* SR_stage() *************************/
+void SR_stage() {
+  
+  /* You are given the code for SR_stage to get you started. Look at
+     the figure for SR stage to see how this code is implemented. */
+  
+  switch (Get_DR_VALUEMUX1(PS.SR_CS))
+  {
+  case 0: 
+    sr_reg_data = PS.SR_ADDRESS ;
+    break;
+  case 1:
+    sr_reg_data = PS.SR_DATA ;
+    break;
+  case 2:
+    sr_reg_data = PS.SR_NPC ;
+    break;
+  case 3:
+    sr_reg_data = PS.SR_ALU_RESULT ;
+    break;
+  }
+
+  sr_reg_id = PS.SR_DRID; 
+  v_sr_ld_reg = Get_SR_LD_REG(PS.SR_CS) & PS.SR_V;
+  v_sr_ld_cc = Get_SR_LD_CC(PS.SR_CS) & PS.SR_V ;
+
+  /* CC LOGIC  */
+  sr_n = ((sr_reg_data & 0x8000) ? 1 : 0);
+  sr_z = ((sr_reg_data & 0xFFFF) ? 0 : 1);
+  sr_p = 0;
+  if ((!sr_n) && (!sr_z))
+    sr_p = 1;
+  
+} 
+
+
+/************************* MEM_stage() *************************/
+//cycle 9 test 1 FIGURE OUT ERROR HERE
+void MEM_stage() {
+
+  int ii,jj = 0;
+  
+  /* your code for MEM stage goes here */
+     int WE0 = 0; 
+     int WE1 = 0;
+   if (Get_DCACHE_RW(PS.MEM_CS)) {
+      if (Get_DATA_SIZE(PS.MEM_CS)){
+        WE0 = 1;
+        WE1 = 1;
+      } 
+      else {
+         if (PS.MEM_ADDRESS & 0x01)
+            WE1 = 1;
+         else 
+            WE0 = 1;
+      }
+   }
+   
+   int v_dcache_en = (Get_DCACHE_EN(PS.MEM_CS) & PS.MEM_V);
+   int DATA = 0;
+   int DCACHE_R = 0;
+   int DATA_OUT = 0;
+  load_pc_from = 0;
+
+
+
+  //logic block
+   if (Get_DATA_SIZE(PS.MEM_CS)) 
+      DATA = PS.MEM_ALU_RESULT;
+   else 
+      DATA = ((PS.MEM_ALU_RESULT & 0x00FF) + ((PS.MEM_ALU_RESULT << 8) & 0xFF00));
+   
+
+   if (v_dcache_en) 
+      dcache_access(PS.MEM_ADDRESS, &DATA_OUT, DATA, &DCACHE_R, WE0, WE1);
+   else 
+      DATA_OUT = 0;
+
+   mem_stall = (v_dcache_en && !DCACHE_R);
+   if (!Get_DATA_SIZE(PS.MEM_CS)) {
+      if (PS.MEM_ADDRESS & 0x01) 
+        DATA_OUT = Low16bits(SEXT((DATA_OUT >> 8) & 0x00FF, 8));//CHECK FOR BUG HERE
+      else 
+        DATA_OUT = Low16bits(SEXT(DATA_OUT & 0x00FF, 8));//CHECK FOR BUG HERE
+   }
+
+
+
+    target_pc = PS.MEM_ADDRESS;
+    trap_pc = DATA_OUT;
+
+
+    if (PS.MEM_V) {
+      if (Get_BR_OP(PS.MEM_CS)) {
+          if (((PS.MEM_IR & 0x0800) && (PS.MEM_CC & 0x0004)) || ((PS.MEM_IR & 0x0400) && (PS.MEM_CC & 0x0002)) || ((PS.MEM_IR & 0x0200) && (PS.MEM_CC & 0x0001))) 
+          load_pc_from = 1;
+      } else if (Get_UNCOND_OP(PS.MEM_CS)) 
+          load_pc_from = 1;
+      else if (Get_TRAP_OP(PS.MEM_CS)) 
+          load_pc_from = 2;
+   }
+
+    v_mem_ld_reg = PS.MEM_V & Get_MEM_LD_REG(PS.MEM_CS);
+    v_mem_br_stall = PS.MEM_V & Get_MEM_BR_STALL(PS.MEM_CS);
+    v_mem_ld_cc = PS.MEM_V & Get_MEM_LD_CC(PS.MEM_CS);
+   
+
+
+
+
+
+   NEW_PS.SR_V = PS.MEM_V & !mem_stall;
+   NEW_PS.SR_NPC = PS.MEM_NPC;
+   NEW_PS.SR_ALU_RESULT = PS.MEM_ALU_RESULT;
+   NEW_PS.SR_IR = PS.MEM_IR;
+   NEW_PS.SR_DRID = PS.MEM_DRID;
+   NEW_PS.SR_ADDRESS = PS.MEM_ADDRESS;
+   NEW_PS.SR_DATA = DATA_OUT;
+  
+  /* The code below propagates the control signals from MEM.CS latch
+     to SR.CS latch. You still need to latch other values into the
+     other SR latches. */
+  for (ii=COPY_SR_CS_START; ii < NUM_MEM_CS_BITS; ii++) {
+    NEW_PS.SR_CS [jj++] = PS.MEM_CS [ii];
+  }
 
 }
+
+
+/************************* AGEX_stage() *************************/
+void AGEX_stage() {
+
+   v_agex_ld_reg = Get_AGEX_LD_REG(PS.AGEX_CS) & PS.AGEX_V;
+   v_agex_ld_cc = Get_AGEX_LD_CC(PS.AGEX_CS) & PS.AGEX_V;
+   v_agex_br_stall = Get_AGEX_BR_STALL(PS.AGEX_CS) & PS.AGEX_V;
+
+  int ii, jj = 0;
+  int LD_MEM = !mem_stall; /* You need to write code to compute the value of LD.MEM
+		 signal */
+
+  /* your code for AGEX stage goes here */
+  int addr1;
+  int addr2;
+  if(Get_ADDR1MUX(PS.AGEX_CS)){
+    addr1 = PS.AGEX_SR1;
+  }
+  else{
+    addr1 = PS.AGEX_NPC;
+  }
+  
+  switch(Get_ADDR2MUX(PS.AGEX_CS))
+  {
+    case 0:
+    addr2 = 0;
+    break;
+
+    case 1:
+    addr2 = SEXT(PS.AGEX_IR & 0x003F, 6);
+    break;
+    
+    case 2:
+    addr2 = SEXT(PS.AGEX_IR & 0x01FF, 9);
+    break;
+
+    case 3:
+    addr2 = SEXT(PS.AGEX_IR & 0x07FF, 11);
+    break;
+  }
+
+  if(Get_LSHF1(PS.AGEX_CS)){
+    addr2 <<= 1; 
+  }
+
+  int addy;
+  if(Get_ADDRESSMUX(PS.AGEX_CS))
+  {
+    addy = addr1+addr2;
+  }
+  else{
+    addy = ((PS.AGEX_IR & 0x00FF) << 1);
+  }
+
+
+  int result_mux;
+
+  if(Get_ALU_RESULTMUX(PS.AGEX_CS)){
+    int sr1;
+    int sr2;
+
+      sr1 = SEXT(PS.AGEX_SR1, 16);
+      if(!Get_SR2MUX(PS.AGEX_CS))
+      {
+          sr2 = SEXT(PS.AGEX_SR2, 16);
+      }
+      else{
+        sr2 = SEXT(PS.AGEX_IR & 0x1F, 5);
+      }
+
+      switch (Get_ALUK(PS.AGEX_CS)) {
+         case 0: 
+         result_mux = Low16bits(sr1 + sr2); 
+         break;
+         case 1: 
+         result_mux = Low16bits(sr1 & sr2); 
+         break;
+         case 2: 
+         result_mux = Low16bits(sr1 ^ sr2); 
+         break;
+         case 3: 
+         result_mux = Low16bits(sr2); 
+         break;
+         default:
+         break;
+      }
+  }
+  else{
+    if (PS.AGEX_IR & 0x0010) {
+        if (PS.AGEX_IR & 0x0020){
+          result_mux = Low16bits(SEXT(PS.AGEX_SR1, 16) >> (PS.AGEX_IR & 0x0F));
+        }
+         else {
+            result_mux = Low16bits(PS.AGEX_SR1 >> (PS.AGEX_IR & 0x0F));
+        }
+      } 
+      else{
+        result_mux = Low16bits(PS.AGEX_SR1 << (PS.AGEX_IR & 0x0F));
+      }
+
+  }
+  if (LD_MEM) {
+    /* Your code for latching into MEM latches goes here */
+      NEW_PS.MEM_ALU_RESULT = result_mux;
+      NEW_PS.MEM_IR = PS.AGEX_IR;
+      NEW_PS.MEM_NPC = PS.AGEX_NPC;
+      NEW_PS.MEM_CC = PS.AGEX_CC;
+      NEW_PS.MEM_DRID = PS.AGEX_DRID;
+      NEW_PS.MEM_V = PS.AGEX_V;
+      NEW_PS.MEM_ADDRESS = addy;
+
+    /* The code below propagates the control signals from AGEX.CS latch
+       to MEM.CS latch. */
+    for (ii = COPY_MEM_CS_START; ii < NUM_AGEX_CS_BITS; ii++) {
+      NEW_PS.MEM_CS [jj++] = PS.AGEX_CS [ii]; 
+    }
+  }
+}
+
+
+
+/************************* DE_stage() *************************/
+void DE_stage() {
+
+  int CONTROL_STORE_ADDRESS;  /* You need to implement the logic to
+			         set the value of this variable. Look
+			         at the figure for DE stage */ 
+
+  CONTROL_STORE_ADDRESS = ((PS.DE_IR & 0xF800)>>10) + ((PS.DE_IR&0x0020)>>5);
+  int ii, jj = 0;
+  
+  int LD_AGEX; /* You need to write code to compute the value of
+		  LD.AGEX signal */
+
+  /* your code for DE stage goes here */
+    LD_AGEX = !mem_stall;
+    v_de_br_stall = PS.DE_V & Get_DE_BR_STALL(CONTROL_STORE[CONTROL_STORE_ADDRESS]);
+
+   //register stuff 
+   int sr1 = (PS.DE_IR >> 6) & 0x07;
+   int sr1_reg_num = sr1;
+   sr1 = REGS[sr1];
+   int sr2;
+
+    if (PS.DE_IR & 0x2000) {
+      sr2 = (PS.DE_IR >> 9) & 0x07;
+    } else {
+      sr2 = PS.DE_IR & 0x07;
+    }
+    int sr2_reg_num = sr2;
+    sr2 = REGS[sr2];
+
+
+   if (v_sr_ld_reg) 
+    REGS[PS.SR_DRID] = sr_reg_data;
+    
+   int AGEX_CC = (N << 2) + (Z << 1) + P;
+
+    //condition codes here
+    if (v_sr_ld_cc) {
+      N = sr_n;
+      Z = sr_z;
+      P = sr_p;
+   }
+
+   //CHANGE DEP_STALL = 0
+   dep_stall = 0;
+
+   if (PS.DE_V) {
+      if (Get_SR1_NEEDED(CONTROL_STORE[CONTROL_STORE_ADDRESS]) && ((v_agex_ld_reg && (PS.AGEX_DRID == sr1_reg_num)) || (v_mem_ld_reg && (PS.MEM_DRID == sr1_reg_num)) || (v_sr_ld_reg && (PS.SR_DRID == sr1_reg_num)))) {
+            dep_stall = 1;
+      }
+      if (Get_SR2_NEEDED(CONTROL_STORE[CONTROL_STORE_ADDRESS]) && (((PS.AGEX_DRID == sr2_reg_num) && v_agex_ld_reg) || (v_mem_ld_reg && (PS.MEM_DRID == sr2_reg_num)) || (v_sr_ld_reg && (PS.SR_DRID == sr2_reg_num)))) { 
+            dep_stall = 1;
+      }
+      if (Get_DE_BR_OP(CONTROL_STORE[CONTROL_STORE_ADDRESS]) && (v_sr_ld_cc || v_agex_ld_cc || v_mem_ld_cc)) {
+            dep_stall = 1;
+      }
+   }
+
+      if (LD_AGEX) {
+      NEW_PS.AGEX_SR1 = sr1;
+      NEW_PS.AGEX_SR2 = sr2;
+      NEW_PS.AGEX_CC = AGEX_CC;
+      NEW_PS.AGEX_NPC = PS.DE_NPC;
+      NEW_PS.AGEX_IR = PS.DE_IR;
+
+    if (Get_DRMUX(CONTROL_STORE[CONTROL_STORE_ADDRESS])) {
+      NEW_PS.AGEX_DRID = 7;
+    } else {
+      NEW_PS.AGEX_DRID = (PS.DE_IR >> 9) & 0x07;
+    }
+        NEW_PS.AGEX_V = PS.DE_V & !dep_stall;
+        int ii, jj = 0;
+        for (ii = COPY_AGEX_CS_START; ii< NUM_CONTROL_STORE_BITS; ii++) {
+          NEW_PS.AGEX_CS[jj++] = CONTROL_STORE[CONTROL_STORE_ADDRESS][ii];
+    }
+  }
+}
+
+/************************* FETCH_stage() *************************/
+
+void FETCH_stage() {
+
+  /* your code for FETCH stage goes here */
+     int newPC;
+     int IR;
+  switch(load_pc_from){
+    case 2:
+    newPC = trap_pc;//trap
+    break;
+    case 1:
+    newPC = target_pc;//from mem  stage
+    break;
+    case 0: 
+    newPC = PC + 2;//other
+    break;
+    default:
+    newPC = PC+2;
+    break;
+  }
+
+   icache_access(PC, &IR, &icache_r);
+   int pc2 = PC+2;
+   if ((v_mem_br_stall && load_pc_from)|| (!(dep_stall || mem_stall || v_agex_br_stall || v_mem_br_stall || v_de_br_stall) && icache_r)) 
+        PC = newPC;
+
+
+   if (!mem_stall & !dep_stall) {//load dependency     
+      NEW_PS.DE_V = icache_r && !(v_de_br_stall || v_agex_br_stall || v_mem_br_stall);//checks if we are getting junk or not
+      NEW_PS.DE_IR = IR;
+      NEW_PS.DE_NPC = pc2;
+   }
+
+   //load_pc_from = 0;//change it back to default 
+
+
+}  
